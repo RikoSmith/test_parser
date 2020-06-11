@@ -97,7 +97,7 @@ def update_json():
 
     print(news_dict["items"])
 
-    with open('news.csv', 'w',) as csvfile:
+    with open('csv/news.csv', 'w',) as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['ID', 'Title', 'Date', 'URL', 'Image URL', 'Language', 'Short Text', 'Full Text', 'Comments Count'])
         for news in news_dict["items"]:
