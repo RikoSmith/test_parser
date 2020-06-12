@@ -5,8 +5,6 @@ import json
 import datetime
 import csv
 import random
-from selenium import webdriver
-from selenium.webdriver.common.proxy import Proxy, ProxyType
 
 
 app = Flask(__name__, static_url_path='')
@@ -28,6 +26,18 @@ proxies = ["202.138.248.107:8080", "41.65.201.165:8080", "93.179.209.216:57520",
 
 # IMPORTANT! Uncomment this line to disable proxies and IP rotation (if it takes long time to load page)
 # proxies = []
+
+
+# this function recursively parses comments and returns a text version
+def parse_comments(data, tabs):
+    text = ""
+    if len(data) == 0:
+        return text
+    for x in data:
+        for i in range(0, tabs):
+            text = text + "----"
+        text = text + x["message"] + "\n\n\n\n" + parse_comments(x["children"], tabs + 1)
+    return text
 
 # this function is for getting a list of all news and its urls
 def news_all():
@@ -159,13 +169,24 @@ def update_json():
         news["full_text"] = n_text
         
 
-        # parsing comments. 
+        # parsing comments. Comments are retrieved dynamically with js code from this endpoint: https://zcomments.net/service/init/1
+        # The post request is sent to it and comments are retrieved
+        # it needs several fields
         n_comments = ""
-        comms = soup.find('div',attrs={'id':'zkn_comments'})
-        if comms is not None:
-            print(comms)
-            n_comments = n_comments + comms.getText() + "\n\n"
+        if int(news["comm_num"]) > 0:
+            url = "https://zcomments.net/service/init/1?page_title=" + news["title"] +  "&page_url=" + news["url"] + "&block_code=zakonnewsid" + news["id"] + "&lang=" + news["lang"]
+            resp = requests.post(url)
+
+            # check for error code (if we have problems here then zakon.kz's data is corrupted)
+            if response.status_code != 200:
+                return ("Error! One of the news links are invalid! Status Code: " + str(response.status_code) + " \Title: " + news["title"])
+
+            # convert JSON to dict
+            comm_data = json.loads(resp.content)
             
+            n_comments = parse_comments(comm_data["comments"]["items"], 0)
+            
+                
         news["comments"] = n_comments
 
     print(news_dict["items"])
