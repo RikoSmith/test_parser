@@ -1,24 +1,13 @@
-"""
-Zakon.kz News Parser by Riko
-
-How to use it:
-    
-    1. Run this app (as a development server)
-    2. Go to 'localhost:5000' in browser
-
-    P.S.: downloads will take time (as it will make #number_of_published_news requests ) since 
-    no persistance (database) have been implemeted to reduece number of unnecessary requests
-   
-"""
-
-
-
 from flask import Flask, render_template, send_from_directory
 from bs4 import BeautifulSoup
 import requests 
 import json
 import datetime
 import csv
+import random
+from selenium import webdriver
+from selenium.webdriver.common.proxy import Proxy, ProxyType
+
 
 app = Flask(__name__, static_url_path='')
 
@@ -31,6 +20,14 @@ headers = {
     "Upgrade-Insecure-Requests": "1", 
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/83.0.4103.61 Chrome/83.0.4103.61 Safari/537.36"
 }
+
+# setting up proxies for IP rotation. Ususaly one would use services such as Crawlera, but for this interview application
+# we would use simple and free implementation. I used free proxies from hidemy.name and as it's free they are UNRELIABLE
+# and they change frequently. So if you have problems disable them 
+proxies = ["202.138.248.107:8080", "41.65.201.165:8080", "93.179.209.216:57520", "104.154.143.77:3128", "212.83.154.189:5836", "80.243.158.6:8080", "163.172.29.6:5836"]
+
+# IMPORTANT! Uncomment this line to disable proxies and IP rotation (if it takes long time to load page)
+# proxies = []
 
 # this function is for getting a list of all news and its urls
 def news_all():
@@ -61,8 +58,31 @@ def news_all():
 
     url = 'http://static.zakon.kz/zakon_cache/category/2/' + str(now.year) + '/' + month + '-' + day + '_news.json'
     print(url)
-    # getting JSON from akon news site
-    response = requests.get(url, headers=headers)
+
+    # getting JSON from zakon news site with IP rotation 
+    i = 0
+    response = None
+    while True:
+        try:
+            #try with random proxy
+            if len(proxies) > 0:
+                i = random.randint(0, len(proxies) - 1)
+                prox = {"http" : proxies(i), "https" : proxies(i)}
+                response = requests.get(url, headers=headers, proxies=prox)
+                break
+            # if we ran out of proxies don't use them at all
+            else:
+                response = requests.get(url, headers=headers)
+                break
+        except:
+            # if there is an error remove that proxy and retry
+            if len(proxies) > 0:
+                del proxies[i]
+            else:
+                print("Sorry, we have run out of proxies and been blocked :( Update your proxy list or use paid services")
+                raise Exception("Connection Error!")
+
+
 
     # check if we get anything, if not return error message (for now)
     if response.status_code != 200:
@@ -91,10 +111,30 @@ def update_json():
     # call '/news' route to update global news list (NEWS) 
     news_dict = news_all()
 
-    # inference through each news item. This time there is not easy API call (i could not find), so we have to 
-    # request each and every news url in the list and add additional data to NEWS document
+    # inference through each news item. This time there is not easy API call (i could not find one), so we have to 
+    # request each and every news url in the list and add additional data to NEWS document, as usual with IP rotation
     for news in news_dict["items"]:
-        response = requests.get(news["url"], headers=headers)
+        i = 0
+        response = None
+        while True:
+            try:
+                #try with random proxy
+                if len(proxies) > 0:
+                    i = random.randint(0, len(proxies) - 1)
+                    prox = {"http" : proxies(i), "https" : proxies(i)}
+                    response = requests.get(news["url"], headers=headers, proxies=prox)
+                    break
+                # if we ran out of proxies don't use them at all
+                else:
+                    response = requests.get(news["url"], headers=headers)
+                    break
+            except:
+                # if there is an error remove that proxy and retry
+                if len(proxies) > 0:
+                    del proxies[i]
+                else:
+                    print("Sorry, we have been blocked :( Update your proxy list or use paid services")
+                    raise Exception("Connection Error!")
 
         # check for error code (if we have problems here then zakon.kz's data is corrupted)
         if response.status_code != 200:
@@ -117,13 +157,24 @@ def update_json():
 
         # adding new field (full text)
         news["full_text"] = n_text
+        
+
+        # parsing comments. 
+        n_comments = ""
+        comms = soup.find('div',attrs={'id':'zkn_comments'})
+        if comms is not None:
+            print(comms)
+            n_comments = n_comments + comms.getText() + "\n\n"
+            
+        news["comments"] = n_comments
 
     print(news_dict["items"])
 
     with open('static/news.csv', 'w',) as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['ID', 'Title', 'Date', 'URL', 'Image URL', 'Language', 'Short Text', 'Full Text', 'Comments Count'])
+        writer.writerow(['ID', 'Title', 'Date', 'URL', 'Image URL', 'Language', 'Short Text', 'Full Text', 'Comments Count', 'Comments'])
         for news in news_dict["items"]:
-            writer.writerow([news["id"], news["title"], news["date_print"], news["url"], news["img"], news["lang"], news["shortstory"], news["full_text"], news["comm_num"]])
+            writer.writerow([news["id"], news["title"], news["date_print"], news["url"], news["img"], news["lang"], news["shortstory"], news["full_text"], news["comm_num"], news["comments"]])
+
 
     return app.send_static_file('news.csv')
