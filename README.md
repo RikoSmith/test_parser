@@ -1,4 +1,4 @@
-# kazdream_parser
+# test_parser
 
 Zakon.kz News Parser by Riko
 
